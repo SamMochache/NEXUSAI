@@ -1,8 +1,8 @@
 from django.urls import path
 from . import views
 
-# URL patterns for the agents app
 urlpatterns = [
-    path('', views.agent_list, name='agent-list'),
-    path('stats/', views.agent_stats, name='agent-stats'),
+    path('', views.AgentListView.as_view(), name='agent-list'),
+    path('stats/', views.AgentStatsView.as_view(), name='agent-stats'),
+    path('<int:pk>/', views.AgentDetailView.as_view(), name='agent-detail'),
 ]

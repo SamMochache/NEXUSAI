@@ -11,12 +11,19 @@ Think of it like creating a new employee profile:
 """
 
 from django.db import models
-
+from django.contrib.auth.models import User
 
 class Agent(models.Model):
     """
     Agent model - represents one AI assistant in our platform.
     """
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='agents',
+        help_text="The user who owns this agent"
+    )
+    
     ROLE_CHOICES = [
         ('support', 'Customer Support'),
         ('sales', 'Sales Assistant'),
@@ -90,18 +97,27 @@ class Agent(models.Model):
 
 
 class Document(models.Model):
-
-    title = models.CharField(max_length=255)
-
-    content = models.TextField()
-
+    """
+    A document uploaded for RAG (Retrieval-Augmented Generation).
+    Belongs to an Agent.
+    """
+    
     agent = models.ForeignKey(
         Agent,
         on_delete=models.CASCADE,
-        related_name='documents'
+        related_name='documents',
+        help_text="The agent this document belongs to"
     )
-
+    
+    title = models.CharField(max_length=255)
+    content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
-
+    
+    class Meta:
+        db_table = 'documents'
+        ordering = ['-created_at']
+        verbose_name = 'Document'
+        verbose_name_plural = 'Documents'
+    
     def __str__(self):
-        return self.title
+        return f"{self.title} ({self.agent.name})"
