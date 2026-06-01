@@ -7,6 +7,9 @@ This file controls how Django behaves.
 import os
 from pathlib import Path
 import dj_database_url
+from dotenv import load_dotenv
+load_dotenv()
+
 
 # ─── BASE DIRECTORY ───
 # "Path(__file__)" means "the folder this file lives in"
