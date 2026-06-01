@@ -4,6 +4,7 @@ NexusAI Settings
 This file controls how Django behaves.
 """
 
+from datetime import timedelta
 import os
 from pathlib import Path
 
@@ -50,6 +51,7 @@ INSTALLED_APPS = [
     # Local apps
     'apps.core',
     'apps.agents',
+    'apps.users',
 ]
 
 # ─── MIDDLEWARE ─────────────────────────────────────────
@@ -159,3 +161,9 @@ REST_FRAMEWORK = {
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY")
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(
+        seconds=10
+    ),
+}

@@ -17,6 +17,7 @@ class DocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Document
         fields = ['id', 'title', 'content', 'created_at']
+        read_only_fields = ['agent', 'created_at']
 
 
 class AgentSerializer(serializers.ModelSerializer):

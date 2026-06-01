@@ -20,4 +20,5 @@ urlpatterns = [
     # POST /api/token/refresh/ → Give refresh token, get new access token
     path('api/token/', TokenObtainPairView.as_view(), name='token-obtain'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
+    path('api/users/', include('apps.users.urls')),
 ]
