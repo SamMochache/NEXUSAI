@@ -12,6 +12,7 @@ Think of it like creating a new employee profile:
 
 from django.db import models
 from django.contrib.auth.models import User
+from pgvector.django import VectorField
 
 class Agent(models.Model):
     """
@@ -59,7 +60,7 @@ class Agent(models.Model):
     
     model_name = models.CharField(
         max_length=100,
-        default="gpt-4o-mini",
+        default="gemini-2.5-flash",
         help_text="Which AI model to use (e.g., gpt-4o-mini, claude-3-haiku)"
     )
     
@@ -98,8 +99,8 @@ class Agent(models.Model):
 
 class Document(models.Model):
     """
-    A document uploaded for RAG (Retrieval-Augmented Generation).
-    Belongs to an Agent.
+    A document uploaded for RAG. Now stores a vector embedding
+    so we can search by MEANING, not just keywords.
     """
     
     agent = models.ForeignKey(
@@ -113,6 +114,17 @@ class Document(models.Model):
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     
+    # ─── NEW: The Vector Brain ───
+    # VectorField stores a list of 1,536 floats inside PostgreSQL.
+    # null=True allows documents to exist before their embedding is generated.
+    # dimensions=1536 matches OpenAI's text-embedding-3-small output size.
+    embedding = VectorField(
+        dimensions=3072,
+        null=True,
+        blank=True,
+        help_text="AI-generated meaning coordinates for semantic search"
+    )
+    
     class Meta:
         db_table = 'documents'
         ordering = ['-created_at']
@@ -121,3 +133,25 @@ class Document(models.Model):
     
     def __str__(self):
         return f"{self.title} ({self.agent.name})"
+    
+    def save(self, *args, **kwargs):
+        """
+        Auto-generate embedding when a document is created or updated.
+        
+        We override the default save() method. This is called every time
+        you do document.save() or Document.objects.create().
+        """
+        # Only generate if we have content and no embedding yet
+        if self.content and self.embedding is None:
+            try:
+                # Lazy import to avoid circular dependencies at module load time
+                from .ai_service import get_embedding
+                self.embedding = get_embedding(self.content)
+            except Exception as e:
+                # Production rule: NEVER crash the whole request
+                # if the AI service fails. Log the error and continue.
+                print(f"[EMBEDDING ERROR] Document '{self.title}': {e}")
+                # self.embedding stays None, which is fine
+        
+        # Call the original save() to write to PostgreSQL
+        super().save(*args, **kwargs)

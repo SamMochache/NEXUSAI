@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'apps.core',
     'apps.agents',
     'apps.users',
+    'pgvector',
 ]
 
 # ─── MIDDLEWARE ─────────────────────────────────────────
@@ -158,7 +159,7 @@ REST_FRAMEWORK = {
 
 # ─── CUSTOM SETTINGS ────────────────────────────────────
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY")
 

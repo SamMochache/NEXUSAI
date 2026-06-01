@@ -12,7 +12,8 @@ from .serializers import (
     AgentListSerializer,
     DocumentSerializer,
 )
-
+from .ai_service import get_embedding
+from pgvector.django import CosineDistance
 
 class AgentListView(APIView):
     """
@@ -259,3 +260,93 @@ def delete_document(request, agent_id, doc_id):
         {"message": "Document deleted"},
         status=status.HTTP_204_NO_CONTENT
     )
+
+class DocumentSearchView(APIView):
+    """
+    POST /api/agents/<agent_id>/search/
+    
+    Request body:
+        {"query": "how do I reset my password?"}
+    
+    Response:
+        {
+            "query": "how do I reset my password?",
+            "agent": "Customer Support Bot",
+            "results_count": 3,
+            "results": [
+                {
+                    "id": 5,
+                    "title": "Password Reset Guide",
+                    "content": "To reset your password, click...",
+                    "similarity_score": 0.9123,
+                    "distance": 0.0877
+                }
+            ]
+        }
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, agent_id):
+        # ─── 1. Verify the agent belongs to the current user ───
+        try:
+            agent = Agent.objects.get(pk=agent_id, owner=request.user)
+        except Agent.DoesNotExist:
+            return Response(
+                {'error': 'Agent not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # ─── 2. Validate the search query ───
+        query = request.data.get('query', '').strip()
+        if not query:
+            return Response(
+                {'error': 'Query is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # ─── 3. Convert the user's question into a vector ───
+        try:
+            query_embedding = get_embedding(query)
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to process query: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # ─── 4. Search the database using COSINE DISTANCE ───
+        # CosineDistance = 1 - CosineSimilarity
+        # 0.0  = identical meaning (perfect match)
+        # 1.0  = completely unrelated
+        # 2.0  = exact opposite (rare for text)
+        # We filter for distance < 0.3 (very similar / similarity > 0.7)
+        
+        results = Document.objects.filter(
+            agent=agent,
+            embedding__isnull=False  # Skip documents without embeddings
+        ).annotate(
+            distance=CosineDistance('embedding', query_embedding)
+        ).filter(
+            distance__lt=0.3
+        ).order_by('distance')[:5]  # Top 5 matches
+        
+        # ─── 5. Format the response ───
+        data = []
+        for doc in results:
+            # Convert distance to a friendly 0-1 similarity score
+            # similarity = 1 - distance
+            similarity = 1 - float(doc.distance)
+            
+            data.append({
+                'id': doc.id,
+                'title': doc.title,
+                'content': doc.content[:300] + '...' if len(doc.content) > 300 else doc.content,
+                'similarity_score': round(similarity, 4),
+                'distance': round(float(doc.distance), 4)
+            })
+        
+        return Response({
+            'query': query,
+            'agent': agent.name,
+            'results_count': len(data),
+            'results': data
+        })
