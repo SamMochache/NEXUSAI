@@ -12,7 +12,8 @@ Think of it like creating a new employee profile:
 
 from django.db import models
 from django.contrib.auth.models import User
-from pgvector.django import VectorField
+from pgvector.django import IvfflatIndex, VectorField
+import re
 
 class Agent(models.Model):
     """
@@ -117,9 +118,9 @@ class Document(models.Model):
     # ─── NEW: The Vector Brain ───
     # VectorField stores a list of 1,536 floats inside PostgreSQL.
     # null=True allows documents to exist before their embedding is generated.
-    # dimensions=1536 matches OpenAI's text-embedding-3-small output size.
+    # dimensions=3072 matches Gemini gemini-2.5-flash  output size. we used 1536  because of vector indexing > 2000 dimention does not work
     embedding = VectorField(
-        dimensions=3072,
+        dimensions=1536 ,
         null=True,
         blank=True,
         help_text="AI-generated meaning coordinates for semantic search"
@@ -128,30 +129,176 @@ class Document(models.Model):
     class Meta:
         db_table = 'documents'
         ordering = ['-created_at']
-        verbose_name = 'Document'
-        verbose_name_plural = 'Documents'
+
+        indexes = [
+            
+            IvfflatIndex(
+                name='document_embedding_ivfflat_idx',
+                fields=['embedding'],
+                opclasses=['vector_cosine_ops'],
+                lists=100
+            )
+        ]
     
     def __str__(self):
         return f"{self.title} ({self.agent.name})"
     
     def save(self, *args, **kwargs):
         """
-        Auto-generate embedding when a document is created or updated.
-        
-        We override the default save() method. This is called every time
-        you do document.save() or Document.objects.create().
+        Save document and automatically generate embeddings.
+
+        Small documents:
+            - Generate one embedding for the whole document.
+
+        Large documents (>1000 words):
+            - Split into chunks.
+            - Generate one embedding per chunk.
         """
-        # Only generate if we have content and no embedding yet
-        if self.content and self.embedding is None:
-            try:
-                # Lazy import to avoid circular dependencies at module load time
-                from .ai_service import get_embedding
-                self.embedding = get_embedding(self.content)
-            except Exception as e:
-                # Production rule: NEVER crash the whole request
-                # if the AI service fails. Log the error and continue.
-                print(f"[EMBEDDING ERROR] Document '{self.title}': {e}")
-                # self.embedding stays None, which is fine
-        
-        # Call the original save() to write to PostgreSQL
+
         super().save(*args, **kwargs)
+
+        if not self.content:
+            return
+
+        try:
+            from .ai_service import get_embedding
+
+            word_count = len(self.content.split())
+
+            # SMALL DOCUMENTS
+            if word_count <= 1000:
+
+                embedding = get_embedding(self.content)
+
+                Document.objects.filter(
+                    pk=self.pk
+                ).update(
+                    embedding=embedding
+                )
+
+            # LARGE DOCUMENTS
+            else:
+
+                # remove old chunks
+                self.chunks.all().delete()
+
+                chunks = split_into_chunks(
+                    self.content,
+                    max_words=1000
+                )
+
+                for index, chunk_text in enumerate(chunks):
+
+                    embedding = get_embedding(chunk_text)
+
+                    DocumentChunk.objects.create(
+                        document=self,
+                        chunk_index=index,
+                        content=chunk_text,
+                        embedding=embedding
+                    )
+
+        except Exception as e:
+
+            print(
+                f"[EMBEDDING ERROR] Document '{self.title}': {e}"
+            )
+
+class DocumentChunk(models.Model):
+    """
+    Smaller chunks of a document used for RAG.
+    Each chunk gets its own embedding.
+    """
+
+    document = models.ForeignKey(
+        Document,
+        on_delete=models.CASCADE,
+        related_name="chunks"
+    )
+
+    chunk_index = models.IntegerField()
+
+    content = models.TextField()
+
+    embedding = VectorField(
+        dimensions=1536,
+        null=True,
+        blank=True
+    )
+
+    class Meta:
+        ordering = ["chunk_index"]
+
+    def __str__(self):
+        return f"{self.document.title} - Chunk {self.chunk_index}"
+
+
+
+def split_into_chunks(text, max_words=1000):
+    """
+    Split document into chunks.
+
+    First split by paragraphs.
+    If a paragraph is too large,
+    split it by sentences.
+    """
+
+    chunks = []
+
+    paragraphs = text.split("\n\n")
+
+    current_chunk = ""
+    current_words = 0
+
+    for paragraph in paragraphs:
+
+        paragraph_words = len(paragraph.split())
+
+        if current_words + paragraph_words <= max_words:
+            current_chunk += "\n\n" + paragraph
+            current_words += paragraph_words
+
+        else:
+
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+
+            if paragraph_words > max_words:
+
+                sentences = re.split(
+                    r'(?<=[.!?])\s+',
+                    paragraph
+                )
+
+                current_chunk = ""
+                current_words = 0
+
+                for sentence in sentences:
+
+                    sentence_words = len(
+                        sentence.split()
+                    )
+
+                    if current_words + sentence_words > max_words:
+
+                        chunks.append(
+                            current_chunk.strip()
+                        )
+
+                        current_chunk = sentence
+                        current_words = sentence_words
+
+                    else:
+
+                        current_chunk += " " + sentence
+                        current_words += sentence_words
+
+            else:
+
+                current_chunk = paragraph
+                current_words = paragraph_words
+
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+
+    return chunks

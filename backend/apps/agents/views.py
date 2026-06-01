@@ -1,4 +1,5 @@
 from django.shortcuts import get_object_or_404
+from django.utils.dateparse import parse_date
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -261,81 +262,69 @@ def delete_document(request, agent_id, doc_id):
         status=status.HTTP_204_NO_CONTENT
     )
 
+
 class DocumentSearchView(APIView):
-    """
-    POST /api/agents/<agent_id>/search/
-    
-    Request body:
-        {"query": "how do I reset my password?"}
-    
-    Response:
-        {
-            "query": "how do I reset my password?",
-            "agent": "Customer Support Bot",
-            "results_count": 3,
-            "results": [
-                {
-                    "id": 5,
-                    "title": "Password Reset Guide",
-                    "content": "To reset your password, click...",
-                    "similarity_score": 0.9123,
-                    "distance": 0.0877
-                }
-            ]
-        }
-    """
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request, agent_id):
-        # ─── 1. Verify the agent belongs to the current user ───
+        # ─── 1. Verify agent ownership ───
         try:
             agent = Agent.objects.get(pk=agent_id, owner=request.user)
         except Agent.DoesNotExist:
             return Response(
-                {'error': 'Agent not found'}, 
+                {'error': 'Agent not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
-        
-        # ─── 2. Validate the search query ───
+
+        # ─── 2. Validate query ───
         query = request.data.get('query', '').strip()
         if not query:
             return Response(
-                {'error': 'Query is required'}, 
+                {'error': 'Query is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # ─── 3. Convert the user's question into a vector ───
+
+        # ─── 3. Optional filters ───
+        min_similarity = float(request.data.get('min_similarity', 0.7))
+        created_after = request.data.get('created_after', None)
+
+        # Convert similarity → distance threshold
+        # similarity = 1 - distance → distance = 1 - similarity
+        distance_threshold = 1 - min_similarity
+
+        created_after_date = parse_date(created_after) if created_after else None
+
+        # ─── 4. Generate embedding ───
         try:
             query_embedding = get_embedding(query)
         except Exception as e:
             return Response(
-                {'error': f'Failed to process query: {str(e)}'}, 
+                {'error': f'Failed to process query: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-        
-        # ─── 4. Search the database using COSINE DISTANCE ───
-        # CosineDistance = 1 - CosineSimilarity
-        # 0.0  = identical meaning (perfect match)
-        # 1.0  = completely unrelated
-        # 2.0  = exact opposite (rare for text)
-        # We filter for distance < 0.3 (very similar / similarity > 0.7)
-        
-        results = Document.objects.filter(
+
+        # ─── 5. Build base queryset ───
+        queryset = Document.objects.filter(
             agent=agent,
-            embedding__isnull=False  # Skip documents without embeddings
-        ).annotate(
+            embedding__isnull=False
+        )
+
+        # Apply date filter if provided
+        if created_after_date:
+            queryset = queryset.filter(created_at__gt=created_after_date)
+
+        # ─── 6. Vector search ───
+        results = queryset.annotate(
             distance=CosineDistance('embedding', query_embedding)
         ).filter(
-            distance__lt=0.3
-        ).order_by('distance')[:5]  # Top 5 matches
-        
-        # ─── 5. Format the response ───
+            distance__lt=distance_threshold
+        ).order_by('distance')[:5]
+
+        # ─── 7. Format results ───
         data = []
         for doc in results:
-            # Convert distance to a friendly 0-1 similarity score
-            # similarity = 1 - distance
             similarity = 1 - float(doc.distance)
-            
+
             data.append({
                 'id': doc.id,
                 'title': doc.title,
@@ -343,7 +332,17 @@ class DocumentSearchView(APIView):
                 'similarity_score': round(similarity, 4),
                 'distance': round(float(doc.distance), 4)
             })
-        
+
+        # ─── 8. Empty result handling ───
+        if not data:
+            return Response({
+                'query': query,
+                'agent': agent.name,
+                'results_count': 0,
+                'results': [],
+                'message': "No highly relevant documents found"
+            })
+
         return Response({
             'query': query,
             'agent': agent.name,
