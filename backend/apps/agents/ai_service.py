@@ -46,3 +46,20 @@ def get_embedding(text: str) -> list[float]:
     )
 
     return response.embeddings[0].values
+
+
+def stream_chat_response(prompt: str, model_name: str = "gemini-1.5-flash"):
+    """
+    Streams Gemini response token-by-token.
+    """
+
+    client = get_client()
+
+    response = client.models.generate_content_stream(
+        model=model_name,
+        contents=prompt
+    )
+
+    for chunk in response:
+        if chunk.text:
+            yield chunk.text

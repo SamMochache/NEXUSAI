@@ -1,21 +1,24 @@
+
+from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_date
-
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Agent, Document
+from .models import Agent, ChatMessage, Document
 from .serializers import (
     AgentSerializer,
     AgentListSerializer,
     DocumentSerializer,
 )
-from .ai_service import get_embedding
+from .ai_service import get_embedding, stream_chat_response
 from pgvector.django import CosineDistance
 from .rag_service import generate_rag_answer
+from .memory_service import add_message_to_memory, get_conversation_history
+from .workflow_service import run_agent_workflow
 
 class AgentListView(APIView):
     """
@@ -356,26 +359,14 @@ class AgentChatView(APIView):
     """
     POST /api/agents/<agent_id>/chat/
     
-    The full RAG pipeline:
+    The FULL agent pipeline (Module 5):
     1. Authenticate user
-    2. Verify agent ownership
-    3. Semantic search for relevant documents
-    4. Generate grounded answer using LLM
-    5. Return answer + citations
-    
-    Request:
-        {"query": "How do I return my item?"}
-    
-    Response:
-        {
-            "query": "How do I return my item?",
-            "answer": "You can return any item within 30 days...",
-            "citations": ["Returns & Refunds"],
-            "model_used": "gpt-4o-mini",
-            "sources": [
-                {"id": 3, "title": "Returns & Refunds", "similarity": 0.8912}
-            ]
-        }
+    2. Load conversation memory (Redis + PostgreSQL)
+    3. Classify intent and route workflow
+    4. Retrieve relevant documents (RAG)
+    5. Call LLM with tools and memory
+    6. Save messages to memory
+    7. Return structured response
     """
     permission_classes = [IsAuthenticated]
     
@@ -397,53 +388,180 @@ class AgentChatView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # ─── 3. Semantic Search (reuse Module 3 logic) ───
+        # ─── 3. Load conversation history ───
+        history = get_conversation_history(agent_id, request.user.id, limit=10)
+        
+        # ─── 4. Semantic Search (RAG) ───
+        documents_data = []
         try:
             query_embedding = get_embedding(query)
+            
+            from pgvector.django import CosineDistance
+            
+            docs = Document.objects.filter(
+                agent=agent,
+                embedding__isnull=False
+            ).annotate(
+                distance=CosineDistance('embedding', query_embedding)
+            ).filter(
+                distance__lt=0.4
+            ).order_by('distance')[:3]
+            
+            for doc in docs:
+                documents_data.append({
+                    'id': doc.id,
+                    'title': doc.title,
+                    'content': doc.content,
+                    'similarity_score': round(1 - float(doc.distance), 4)
+                })
         except Exception as e:
-            return Response(
-                {'error': f'Embedding failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            # RAG failure should not crash the chat
+            print(f"[RAG WARNING] Search failed: {e}")
         
-        # Find top 3 most relevant documents
-        from pgvector.django import CosineDistance
+        # ─── 5. Save user message to memory ───
+        add_message_to_memory(
+            agent_id=agent_id,
+            user_id=request.user.id,
+            role='user',
+            content=query,
+            metadata={'source': 'api', 'rag_docs_found': len(documents_data)}
+        )
         
-        docs = Document.objects.filter(
+        # ─── 6. Run Agent Workflow ───
+        result = run_agent_workflow(
             agent=agent,
-            embedding__isnull=False
-        ).annotate(
-            distance=CosineDistance('embedding', query_embedding)
-        ).filter(
-            distance__lt=0.4  # Slightly looser than pure search
-        ).order_by('distance')[:3]
+            user=request.user,
+            query=query,
+            conversation_history=history,
+            documents=documents_data
+        )
         
-        # Format documents for RAG
-        documents_data = []
-        for doc in docs:
-            documents_data.append({
-                'id': doc.id,
-                'title': doc.title,
-                'content': doc.content,
-                'similarity_score': round(1 - float(doc.distance), 4)
-            })
+        # ─── 7. Save AI response to memory ───
+        add_message_to_memory(
+            agent_id=agent_id,
+            user_id=request.user.id,
+            role='assistant',
+            content=result['answer'],
+            metadata={
+                'model_used': agent.model_name,
+                'intent': result['intent'],
+                'tools_used': [t['tool'] for t in result['tools_used']],
+                'sources': [s['title'] for s in result['sources']]
+            }
+        )
         
-        # ─── 4. Generate RAG Answer ───
-        agent_config = {
-            'model_name': agent.model_name,
-            'temperature': agent.temperature,
-            'max_tokens': agent.max_tokens,
-            'system_prompt': agent.system_prompt
-        }
-        
-        result = generate_rag_answer(query, documents_data, agent_config)
-        
-        # ─── 5. Return structured response ───
+        # ─── 8. Return response ───
         return Response({
             'query': query,
             'agent': agent.name,
             'answer': result['answer'],
-            'citations': result['citations'],
-            'model_used': result['model_used'],
-            'sources': result['sources']
+            'intent': result['intent'],
+            'tools_used': result['tools_used'],
+            'sources': result['sources'],
+            'conversation_length': len(history) + 2
         })
+
+
+class ChatHistoryView(APIView):
+    """
+    GET /api/agents/<agent_id>/history/
+    
+    Retrieve the full conversation history for this user and agent.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, agent_id):
+        # Verify ownership
+        try:
+            agent = Agent.objects.get(pk=agent_id, owner=request.user)
+        except Agent.DoesNotExist:
+            return Response(
+                {'error': 'Agent not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get last 50 messages from PostgreSQL (permanent record)
+        messages = ChatMessage.objects.filter(
+            agent=agent,
+            user=request.user
+        ).order_by('created_at')[:50]
+        
+        data = []
+        for msg in messages:
+            data.append({
+                'id': msg.id,
+                'role': msg.role,
+                'content': msg.content,
+                'metadata': msg.metadata,
+                'created_at': msg.created_at.isoformat()
+            })
+        
+        return Response({
+            'agent': agent.name,
+            'message_count': len(data),
+            'messages': data
+        })
+
+
+class AgentHistoryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, agent_id):
+
+        messages = ChatMessage.objects.filter(
+            agent_id=agent_id,
+            user=request.user
+        ).order_by("-created_at")[:50]
+
+        return Response([
+            {
+                "query": m.query,
+                "answer": m.answer,
+                "sources_used": m.sources_used,
+                "created_at": m.created_at
+            }
+            for m in messages
+        ])
+    
+
+
+class AgentChatStreamView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, agent_id):
+
+        query = request.data.get("query", "").strip()
+
+        if not query:
+            return StreamingHttpResponse(
+                "data: Query is required\n\n",
+                content_type="text/event-stream"
+            )
+
+        try:
+            agent = Agent.objects.get(pk=agent_id, owner=request.user)
+        except Agent.DoesNotExist:
+            return StreamingHttpResponse(
+                "data: Agent not found\n\n",
+                content_type="text/event-stream"
+            )
+
+        # Build prompt (you can later plug RAG here)
+        prompt = f"""
+You are {agent.name}.
+System: {agent.system_prompt}
+
+User: {query}
+"""
+
+        def event_stream():
+            try:
+                for token in stream_chat_response(prompt, agent.model_name):
+                    yield f"data: {token}\n\n"
+            except Exception as e:
+                yield f"data: ERROR: {str(e)}\n\n"
+
+        return StreamingHttpResponse(
+            event_stream(),
+            content_type="text/event-stream"
+        )

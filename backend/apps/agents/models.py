@@ -302,3 +302,60 @@ def split_into_chunks(text, max_words=1000):
         chunks.append(current_chunk.strip())
 
     return chunks
+
+
+class ChatMessage(models.Model):
+    """
+    Long-term conversation storage.
+    Every user message and AI response is saved here permanently.
+    """
+    
+    ROLE_CHOICES = [
+        ('user', 'User'),
+        ('assistant', 'AI Assistant'),
+        ('system', 'System'),
+        ('tool', 'Tool Result'),
+    ]
+    
+    agent = models.ForeignKey(
+        Agent,
+        on_delete=models.CASCADE,
+        related_name='messages',
+        help_text="Which agent this conversation belongs to"
+    )
+    
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='chat_messages',
+        help_text="Which human user sent this message"
+    )
+    
+    role = models.CharField(
+        max_length=20,
+        choices=ROLE_CHOICES,
+        default='user'
+    )
+    
+    content = models.TextField(
+        help_text="The actual message text"
+    )
+    
+    # Metadata for analytics and debugging
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Extra info: model used, tokens consumed, tools called, etc."
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'chat_messages'
+        ordering = ['-created_at']  # Newest first
+        verbose_name = 'Chat Message'
+        verbose_name_plural = 'Chat Messages'
+    
+    def __str__(self):
+        preview = self.content[:50] + '...' if len(self.content) > 50 else self.content
+        return f"[{self.role}] {preview} ({self.user.username})"

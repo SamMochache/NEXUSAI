@@ -10,5 +10,7 @@ urlpatterns = [
     path('<int:agent_id>/documents/<int:doc_id>/',views.delete_document),
     path('<int:agent_id>/search/', views.DocumentSearchView.as_view(), name='document-search'),
     path('<int:agent_id>/chat/', views.AgentChatView.as_view(), name='agent-chat'),
-
+    
+    # ─── NEW: Chat history ───
+    path('<int:agent_id>/history/', views.ChatHistoryView.as_view(), name='chat-history'),
 ]

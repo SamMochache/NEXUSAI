@@ -169,3 +169,22 @@ SIMPLE_JWT = {
         seconds=10
     ),
 }
+
+# ─── REDIS CONFIGURATION ───
+# Redis runs on port 6379 by default
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': REDIS_URL,
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        }
+    }
+}
+
+# ─── SESSION ENGINE ───
+# Store user sessions in Redis instead of PostgreSQL (faster)
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+SESSION_CACHE_ALIAS = 'default'
