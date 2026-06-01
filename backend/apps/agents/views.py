@@ -29,6 +29,7 @@ def agent_list(request):
             'id': agent.id,
             'name': agent.name,
             'description': agent.description,
+            'role': agent.role,
             'model_name': agent.model_name,
             'temperature': agent.temperature,
             'max_tokens': agent.max_tokens,
@@ -39,4 +40,27 @@ def agent_list(request):
     return Response({
         'count': len(data),
         'agents': data
+    })
+
+
+@api_view(['GET'])
+def agent_stats(request):
+
+    total_agents = Agent.objects.count()
+
+    active_agents = Agent.objects.filter(
+        is_active=True
+    ).count()
+
+    models_used = list(
+        Agent.objects.values_list(
+            'model_name',
+            flat=True
+        ).distinct()
+    )
+
+    return Response({
+        "total_agents": total_agents,
+        "active_agents": active_agents,
+        "models_used": models_used
     })

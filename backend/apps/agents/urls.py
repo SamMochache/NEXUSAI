@@ -4,4 +4,5 @@ from . import views
 # URL patterns for the agents app
 urlpatterns = [
     path('', views.agent_list, name='agent-list'),
+    path('stats/', views.agent_stats, name='agent-stats'),
 ]

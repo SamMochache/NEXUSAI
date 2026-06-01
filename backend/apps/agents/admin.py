@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Agent
+from .models import Agent, Document
 
 
 @admin.register(Agent)
@@ -10,13 +10,25 @@ class AgentAdmin(admin.ModelAdmin):
     """
     
     # Which columns show in the list view
-    list_display = ['name', 'model_name', 'is_active', 'created_at', 'temperature']
+    list_display = [
+    'name',
+    'role',
+    'model_name',
+    'is_active',
+    'created_at',
+    'temperature'
+]
     
     # Which fields can be clicked to edit
     list_display_links = ['name']
     
     # Filters on the right sidebar
-    list_filter = ['is_active', 'model_name', 'created_at']
+    list_filter = [
+    'role',
+    'is_active',
+    'model_name',
+    'created_at'
+]
     
     # Search box fields
     search_fields = ['name', 'description', 'system_prompt']
@@ -24,10 +36,15 @@ class AgentAdmin(admin.ModelAdmin):
     # Fields that show on the edit page, organized into sections
     fieldsets = (
         ('Basic Info', {
-            'fields': ('name', 'description', 'is_active')
+            'fields': ('name', 'role', 'description', 'is_active')
         }),
         ('AI Configuration', {
             'fields': ('system_prompt', 'model_name', 'temperature', 'max_tokens'),
             'description': 'These settings control how the AI behaves.'
         }),
     )
+
+@admin.register(Document)
+class DocumentAdmin(admin.ModelAdmin):
+    list_display = ['title', 'agent', 'created_at']
+    search_fields = ['title']
