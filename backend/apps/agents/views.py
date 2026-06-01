@@ -15,6 +15,7 @@ from .serializers import (
 )
 from .ai_service import get_embedding
 from pgvector.django import CosineDistance
+from .rag_service import generate_rag_answer
 
 class AgentListView(APIView):
     """
@@ -348,4 +349,101 @@ class DocumentSearchView(APIView):
             'agent': agent.name,
             'results_count': len(data),
             'results': data
+        })
+
+
+class AgentChatView(APIView):
+    """
+    POST /api/agents/<agent_id>/chat/
+    
+    The full RAG pipeline:
+    1. Authenticate user
+    2. Verify agent ownership
+    3. Semantic search for relevant documents
+    4. Generate grounded answer using LLM
+    5. Return answer + citations
+    
+    Request:
+        {"query": "How do I return my item?"}
+    
+    Response:
+        {
+            "query": "How do I return my item?",
+            "answer": "You can return any item within 30 days...",
+            "citations": ["Returns & Refunds"],
+            "model_used": "gpt-4o-mini",
+            "sources": [
+                {"id": 3, "title": "Returns & Refunds", "similarity": 0.8912}
+            ]
+        }
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, agent_id):
+        # ─── 1. Verify agent belongs to user ───
+        try:
+            agent = Agent.objects.get(pk=agent_id, owner=request.user)
+        except Agent.DoesNotExist:
+            return Response(
+                {'error': 'Agent not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # ─── 2. Validate query ───
+        query = request.data.get('query', '').strip()
+        if not query:
+            return Response(
+                {'error': 'Query is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # ─── 3. Semantic Search (reuse Module 3 logic) ───
+        try:
+            query_embedding = get_embedding(query)
+        except Exception as e:
+            return Response(
+                {'error': f'Embedding failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # Find top 3 most relevant documents
+        from pgvector.django import CosineDistance
+        
+        docs = Document.objects.filter(
+            agent=agent,
+            embedding__isnull=False
+        ).annotate(
+            distance=CosineDistance('embedding', query_embedding)
+        ).filter(
+            distance__lt=0.4  # Slightly looser than pure search
+        ).order_by('distance')[:3]
+        
+        # Format documents for RAG
+        documents_data = []
+        for doc in docs:
+            documents_data.append({
+                'id': doc.id,
+                'title': doc.title,
+                'content': doc.content,
+                'similarity_score': round(1 - float(doc.distance), 4)
+            })
+        
+        # ─── 4. Generate RAG Answer ───
+        agent_config = {
+            'model_name': agent.model_name,
+            'temperature': agent.temperature,
+            'max_tokens': agent.max_tokens,
+            'system_prompt': agent.system_prompt
+        }
+        
+        result = generate_rag_answer(query, documents_data, agent_config)
+        
+        # ─── 5. Return structured response ───
+        return Response({
+            'query': query,
+            'agent': agent.name,
+            'answer': result['answer'],
+            'citations': result['citations'],
+            'model_used': result['model_used'],
+            'sources': result['sources']
         })
