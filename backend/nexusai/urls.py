@@ -6,7 +6,8 @@ Added JWT token endpoints.
 
 from django.contrib import admin
 from django.urls import path, include
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
+from apps.users.views import CustomTokenObtainPairView
 
 urlpatterns = [
     # Admin
@@ -18,7 +19,7 @@ urlpatterns = [
     # Authentication (JWT)
     # POST /api/token/        → Give email/password, get access + refresh tokens
     # POST /api/token/refresh/ → Give refresh token, get new access token
-    path('api/token/', TokenObtainPairView.as_view(), name='token-obtain'),
+    path('api/token/', CustomTokenObtainPairView.as_view(), name='token-obtain'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
     path('api/users/', include('apps.users.urls')),
 ]

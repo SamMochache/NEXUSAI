@@ -1,0 +1,244 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* NexusAI Dark Theme */
+:root {
+  /* Dark mode is default */
+  --background: #020617; /* slate-950 */
+  --foreground: #f8fafc; /* slate-50 */
+  --card: #0f172a; /* slate-900 */
+  --card-foreground: #f8fafc;
+  --popover: #0f172a;
+  --popover-foreground: #f8fafc;
+  --primary: #6366f1; /* indigo-500 */
+  --primary-foreground: #ffffff;
+  --secondary: #1e293b; /* slate-800 */
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #64748b; /* slate-500 */
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+  --destructive: #f43f5e; /* rose-500 */
+  --destructive-foreground: #ffffff;
+  --border: rgba(51, 65, 85, 0.3); /* slate-700/30 */
+  --input: rgba(51, 65, 85, 0.3);
+  --ring: #6366f1;
+  --chart-1: #6366f1;
+  --chart-2: #10b981;
+  --chart-3: #f59e0b;
+  --chart-4: #f43f5e;
+  --chart-5: #94a3b8;
+  --radius: 0.5rem;
+  
+  /* Sidebar */
+  --sidebar: #0f172a;
+  --sidebar-foreground: #f8fafc;
+  --sidebar-primary: #6366f1;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(99, 102, 241, 0.1);
+  --sidebar-accent-foreground: #f8fafc;
+  --sidebar-border: rgba(51, 65, 85, 0.3);
+  --sidebar-ring: #6366f1;
+  
+  /* Custom NexusAI tokens */
+  --surface: #0f172a; /* slate-900 */
+  --elevated: #1e293b; /* slate-800 */
+  --text-primary: #f8fafc; /* slate-50 */
+  --text-secondary: #94a3b8; /* slate-400 */
+  --text-muted: #64748b; /* slate-500 */
+  --success: #10b981; /* emerald-500 */
+  --warning: #f59e0b; /* amber-500 */
+  --error: #f43f5e; /* rose-500 */
+  --primary-glow: rgba(99, 102, 241, 0.2);
+  --ai-message-bg: rgba(30, 41, 59, 0.5);
+  --ai-message-border: rgba(99, 102, 241, 0.1);
+  --user-message-bg: rgba(99, 102, 241, 0.2);
+}
+
+.dark {
+  /* Same as root since dark mode is default */
+  --background: #020617;
+  --foreground: #f8fafc;
+  --card: #0f172a;
+  --card-foreground: #f8fafc;
+  --popover: #0f172a;
+  --popover-foreground: #f8fafc;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --secondary: #1e293b;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #64748b;
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+  --destructive: #f43f5e;
+  --destructive-foreground: #ffffff;
+  --border: rgba(51, 65, 85, 0.3);
+  --input: rgba(51, 65, 85, 0.3);
+  --ring: #6366f1;
+}
+
+@theme inline {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  
+  /* Custom colors */
+  --color-surface: var(--surface);
+  --color-elevated: var(--elevated);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.5);
+}
+
+/* Focus visible styles */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Animations */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bounce-dots {
+  0%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.2s ease-out;
+}
+
+.animate-shake {
+  animation: shake 0.3s ease-in-out;
+}
+
+.animate-bounce-dot {
+  animation: bounce-dots 1.4s infinite ease-in-out both;
+}
+
+.animate-bounce-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.animate-bounce-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+/* Prose for markdown */
+.prose-nexus {
+  --tw-prose-body: #94a3b8;
+  --tw-prose-headings: #f8fafc;
+  --tw-prose-links: #818cf8;
+  --tw-prose-bold: #f8fafc;
+  --tw-prose-code: #818cf8;
+  --tw-prose-pre-bg: #0f172a;
+}
+
+.prose-nexus code {
+  color: var(--tw-prose-code);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.875em;
+  background: rgba(30, 41, 59, 0.5);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+}
+
+.prose-nexus pre {
+  background: var(--tw-prose-pre-bg);
+  border: 1px solid rgba(51, 65, 85, 0.3);
+  border-radius: 0.5rem;
+}
+
+.prose-nexus pre code {
+  background: transparent;
+  padding: 0;
+}
