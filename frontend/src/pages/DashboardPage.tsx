@@ -170,11 +170,11 @@ function AgentCard({ agent }: { agent: Agent }) {
                 <div className="h-1.5 flex-1 max-w-20 rounded-full bg-slate-700/50">
                   <div
                     className="h-full rounded-full bg-primary"
-                    style={{ width: `${(agent.temperature / 2) * 100}%` }}
+                    style={{ width: `${((agent.temperature ?? 0.7) / 2) * 100}%` }}
                   />
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {agent.temperature.toFixed(1)}
+                  {(agent.temperature ?? 0.7).toFixed(1)}
                 </span>
               </div>
             </div>
