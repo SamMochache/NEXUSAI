@@ -50,14 +50,14 @@ const models = [
 interface FormData {
   name: string
   description: string
-  role: string
+  role: Agent['role']
   system_prompt: string
-  model_name: string
+  model_name: Agent['model_name']
   temperature: number
   max_tokens: number
   is_active: boolean
-  enable_tools: boolean
-  require_citations: boolean
+  enable_tools?: boolean
+  require_citations?: boolean
 }
 
 const defaultFormData: FormData = {
@@ -253,7 +253,7 @@ export function AgentBuilderPage() {
                     <Select
                       value={formData.role}
                       onValueChange={(value) =>
-                        setFormData({ ...formData, role: value })
+                        setFormData({ ...formData, role: value as Agent['role'] })
                       }
                     >
                       <SelectTrigger className="border-slate-700/30 bg-background text-foreground">

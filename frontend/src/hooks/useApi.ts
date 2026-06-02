@@ -18,7 +18,7 @@ export function useLogin() {
       return api.login(username, password)
     },
     onSuccess: (data) => {
-      setAuth(data.user, data.access)
+      setAuth(data.user, data.access, data.refresh)
       toast.success('Welcome back!')
     },
     onError: (error: Error) => {

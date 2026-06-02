@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
@@ -21,10 +21,11 @@ export function LoginPage() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
 
   // Redirect if already authenticated
-  if (isAuthenticated) {
-    navigate('/dashboard', { replace: true })
-    return null
-  }
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [isAuthenticated, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
