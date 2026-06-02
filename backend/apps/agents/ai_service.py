@@ -42,13 +42,20 @@ def get_embedding(text: str) -> list[float]:
 
     response = client.models.embed_content(
         model="gemini-embedding-001",
-        contents=text
+        contents=text,
+        config={
+            "output_dimensionality": 1536
+        }
     )
 
+    if not response.embeddings:
+        raise RuntimeError(
+            "Gemini returned no embeddings."
+        )
     return response.embeddings[0].values
 
 
-def stream_chat_response(prompt: str, model_name: str = "gemini-1.5-flash"):
+def stream_chat_response(prompt: str, model_name: str = "gemini-2.5-flash"):
     """
     Streams Gemini response token-by-token.
     """

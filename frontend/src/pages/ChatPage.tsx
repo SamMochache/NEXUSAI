@@ -317,7 +317,7 @@ function RightPanel({ agent, lastSources }: { agent: any; lastSources?: Array<{ 
           <div className="space-y-4">
             <div>
               <p className="text-xs uppercase tracking-wider text-muted-foreground">Model</p>
-              <p className="mt-1 font-mono text-sm text-foreground">{agent?.model_name || 'gpt-4o-mini'}</p>
+              <p className="mt-1 font-mono text-sm text-foreground">{agent?.model_name || 'gemini-2.5-flash'}</p>
             </div>
             <div>
               <p className="text-xs uppercase tracking-wider text-muted-foreground">Temperature</p>
@@ -437,11 +437,13 @@ export function ChatPage() {
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: response.response,
+        content: response.answer,
         timestamp: new Date().toISOString(),
         intent: response.intent,
-        tools_used: response.tools_used,
-        sources: response.sources,
+        tools_used: (response.tools_used || []).map((t: any) =>
+          typeof t === 'string' ? t : t.tool
+        ),
+        sources: response.sources || [],
       }
 
       setMessages((prev) => [...prev, aiMessage])

@@ -110,7 +110,16 @@ export function useSendMessage(agentId: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (query: string) => api.sendMessage(agentId, query),
+    mutationFn: async (query: string) => {
+      const res = await api.sendMessage(agentId, query)
+
+      return {
+        answer: res.answer || res.answer || '',
+        intent: res.intent,
+        tools_used: res.tools_used || [],
+        sources: res.sources || [],
+      }
+  },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chat', agentId, 'history'] })
     },
