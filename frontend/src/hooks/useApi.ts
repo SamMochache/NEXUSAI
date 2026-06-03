@@ -3,41 +3,35 @@ import { api } from '@/src/lib/api'
 import { useAuthStore, type Agent } from '@/src/store'
 import { toast } from 'sonner'
 
-// Auth hooks
+// ================= AUTH =================
 export function useLogin() {
-  const setAuth = useAuthStore((state) => state.setAuth)
+  const setAuth = useAuthStore((s) => s.setAuth)
 
   return useMutation({
-    mutationFn: async ({
-      username,
-      password,
-    }: {
-      username: string
-      password: string
-    }) => {
+    mutationFn: async ({ username, password }: any) => {
       return api.login(username, password)
     },
     onSuccess: (data) => {
       setAuth(data.user, data.access, data.refresh)
-      toast.success('Welcome back!')
+      toast.success('Login successful')
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Invalid credentials')
+    onError: (err: Error) => {
+      toast.error(err.message)
     },
   })
 }
 
-// Agent hooks
+// ================= AGENTS =================
 export function useAgents() {
   return useQuery({
     queryKey: ['agents'],
-    queryFn: () => api.getAgents(),
+    queryFn: api.getAgents,
   })
 }
 
 export function useAgent(id: string) {
   return useQuery({
-    queryKey: ['agents', id],
+    queryKey: ['agent', id],
     queryFn: () => api.getAgent(id),
     enabled: !!id,
   })
@@ -45,93 +39,79 @@ export function useAgent(id: string) {
 
 export function useAgentStats() {
   return useQuery({
-    queryKey: ['agents', 'stats'],
-    queryFn: () => api.getAgentStats(),
+    queryKey: ['agent-stats'],
+    queryFn: api.getAgentStats,
   })
 }
 
+// ================= MUTATIONS =================
 export function useCreateAgent() {
-  const queryClient = useQueryClient()
+  const qc = useQueryClient()
 
   return useMutation({
-    mutationFn: (agent: Partial<Agent>) => api.createAgent(agent),
+    mutationFn: api.createAgent,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agents'] })
-      toast.success('Agent created successfully')
+      qc.invalidateQueries({ queryKey: ['agents'] })
+      toast.success('Agent created')
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to create agent')
-    },
+    onError: (e: Error) => toast.error(e.message),
   })
 }
 
 export function useUpdateAgent() {
-  const queryClient = useQueryClient()
+  const qc = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ id, agent }: { id: string; agent: Partial<Agent> }) =>
-      api.updateAgent(id, agent),
-    onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: ['agents'] })
-      queryClient.invalidateQueries({ queryKey: ['agents', id] })
-      toast.success('Agent updated successfully')
+    mutationFn: ({ id, agent }: any) => api.updateAgent(id, agent),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['agents'] })
+      qc.invalidateQueries({ queryKey: ['agent', vars.id] })
+      toast.success('Agent updated')
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to update agent')
-    },
+    onError: (e: Error) => toast.error(e.message),
   })
 }
 
 export function useDeleteAgent() {
-  const queryClient = useQueryClient()
+  const qc = useQueryClient()
 
   return useMutation({
-    mutationFn: (id: string) => api.deleteAgent(id),
+    mutationFn: api.deleteAgent,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agents'] })
+      qc.invalidateQueries({ queryKey: ['agents'] })
       toast.success('Agent deleted')
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to delete agent')
-    },
+    onError: (e: Error) => toast.error(e.message),
   })
 }
 
-// Chat hooks
+// ================= CHAT =================
 export function useChatHistory(agentId: string) {
   return useQuery({
-    queryKey: ['chat', agentId, 'history'],
+    queryKey: ['chat-history', agentId],
     queryFn: () => api.getChatHistory(agentId),
     enabled: !!agentId,
   })
 }
 
 export function useSendMessage(agentId: string) {
-  const queryClient = useQueryClient()
+  const qc = useQueryClient()
 
   return useMutation({
-    mutationFn: async (query: string) => {
-      const res = await api.sendMessage(agentId, query)
+    mutationFn: (query: string) => api.sendMessage(agentId, query),
 
-      return {
-        answer: res.answer || res.answer || '',
-        intent: res.intent,
-        tools_used: res.tools_used || [],
-        sources: res.sources || [],
-      }
-  },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['chat', agentId, 'history'] })
+      qc.invalidateQueries({ queryKey: ['chat-history', agentId] })
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to send message')
-    },
+
+    onError: (e: Error) => toast.error(e.message),
   })
 }
 
-// Document hooks
+// ================= DOCS =================
 export function useSearchDocuments(agentId: string) {
   return useMutation({
-    mutationFn: (query: string) => api.searchDocuments(agentId, query),
+    mutationFn: (query: string) =>
+      api.searchDocuments(agentId, query),
   })
 }

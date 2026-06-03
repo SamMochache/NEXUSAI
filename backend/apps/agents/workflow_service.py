@@ -2,33 +2,40 @@
 Agent Workflow Service
 =======================
 Routes conversations based on intent, sentiment, and context.
-Decides: Should the AI answer? Should it call a tool? Should it escalate?
+Decides: answer, tools, escalation.
 """
 
 from .tools import get_available_tools, execute_tool
 from .ai_service import get_client
+from .rag_service import prepare_rag_context
 
 
 def classify_intent(query: str) -> str:
     query_lower = query.lower()
 
-    escalation_words = ['human', 'agent', 'representative', 'supervisor', 'manager', 'speak to someone']
+    escalation_words = [
+        'human', 'agent', 'representative',
+        'supervisor', 'manager', 'speak to someone'
+    ]
     if any(word in query_lower for word in escalation_words):
         return 'escalation'
 
-    complaint_words = ['angry', 'frustrated', 'terrible', 'awful', 'worst', 'hate', 'useless', 'broken', 'refund now', 'lawsuit']
+    complaint_words = [
+        'angry', 'frustrated', 'terrible', 'awful',
+        'worst', 'hate', 'useless', 'broken',
+        'refund', 'lawsuit'
+    ]
     if any(word in query_lower for word in complaint_words):
         return 'complaint'
 
-    action_words = ['create', 'open', 'send', 'book', 'schedule', 'check my', 'look up', 'find my']
+    action_words = [
+        'create', 'open', 'send', 'book',
+        'schedule', 'check', 'look up', 'find'
+    ]
     if any(word in query_lower for word in action_words):
         return 'action_request'
 
     return 'question'
-
-
-def should_use_rag(intent: str) -> bool:
-    return intent == 'question'
 
 
 def should_allow_tools(intent: str) -> bool:
@@ -36,66 +43,52 @@ def should_allow_tools(intent: str) -> bool:
 
 
 def build_system_prompt(agent, intent: str) -> str:
-    base_prompt = agent.system_prompt or "You are a helpful AI assistant."
+    base = agent.system_prompt or "You are a helpful AI assistant."
 
     if intent == 'complaint':
-        return base_prompt + """
-CRITICAL: The user seems frustrated or angry.
-- Acknowledge frustration.
-- Apologize sincerely.
-- Offer solutions.
-- Escalate if needed.
-"""
+        return base + "\n\nUser is upset. Be empathetic and solution-focused."
 
-    elif intent == 'escalation':
-        return base_prompt + """
-CRITICAL: User requested a human.
-- Do NOT attempt to solve.
-- Acknowledge immediately.
-- Trigger escalation workflow.
-"""
+    if intent == 'escalation':
+        return base + "\n\nUser requested a human. Do not attempt to solve. Acknowledge and escalate."
 
-    elif intent == 'action_request':
-        return base_prompt + """
-You may help the user perform actions using available tools.
-Use tools when appropriate instead of describing steps.
-"""
+    if intent == 'action_request':
+        return base + "\n\nUser wants an action. Prefer tools over explanations."
 
-    else:
-        return base_prompt + """
-Answer using provided context if available.
-If you don't know, say so.
-"""
+    return base + "\n\nAnswer using context if available."
 
 
 def run_agent_workflow(agent, user, query: str, conversation_history: list, documents: list) -> dict:
+
     intent = classify_intent(query)
     system_prompt = build_system_prompt(agent, intent)
 
     client = get_client()
 
-    # ─── Build context ───
-    context_block = ""
+    # ─── RAG (clean separation) ───
+    rag = prepare_rag_context(documents, query)
+    context_block = rag["context"]
+    sources = rag["sources"]
 
-    if should_use_rag(intent) and documents:
-        context_block = "\n".join(
-            f"[Document {i+1}: {doc['title']}]\n{doc['content']}"
-            for i, doc in enumerate(documents)
-        )
-
-    # ─── Build final prompt ───
+    # ─── HISTORY ───
     history_text = "\n".join(
         f"{msg['role']}: {msg['content']}"
-        for msg in conversation_history[-6:]
+        for msg in conversation_history[-8:]
     )
 
+    # ─── TOOLS ───
     tools = get_available_tools() if should_allow_tools(intent) else []
 
-    tool_hint = ""
-    if tools:
-        tool_names = [t.get("function", {}).get("name") for t in tools]
-        tool_hint = f"\nAvailable tools: {', '.join(filter(None, tool_names))}"
+    tool_names = [
+        (t.get("function") or {}).get("name")
+        for t in tools
+        if (t.get("function") or {}).get("name")
+    ]
 
+    tool_hint = ""
+    if tool_names:
+        tool_hint = "\nAvailable tools: " + ", ".join(tool_names)
+
+    # ─── PROMPT ───
     prompt = f"""
 {system_prompt}
 
@@ -105,12 +98,13 @@ CONTEXT:
 HISTORY:
 {history_text}
 
-USER: {query}
+USER:
+{query}
 
 {tool_hint}
 
-Return a helpful response.
-"""
+Respond clearly and accurately.
+""".strip()
 
     try:
         response = client.models.generate_content(
@@ -118,35 +112,38 @@ Return a helpful response.
             contents=prompt
         )
 
-        answer = response.text.strip() if response.text else ""
+        answer = (response.text or "").strip()
 
-        # ─── SIMPLE TOOL EXECUTION (no OpenAI function calling) ───
+        if not answer:
+            answer = "I couldn't generate a response. Please try again."
+
+        # ─── SIMPLE TOOL EXECUTION ───
         tools_used = []
 
-        if tools:
-            for tool in tools:
-                tool_name = tool.get("function", {}).get("name")
-
-                if tool_name and tool_name in query.lower():
-                    result = execute_tool(tool_name, {"query": query})
+        for name in tool_names:
+            if name in query.lower():
+                try:
+                    result = execute_tool(name, {"query": query})
                     tools_used.append({
-                        "tool": tool_name,
+                        "tool": name,
                         "result": result
+                    })
+                except Exception as e:
+                    tools_used.append({
+                        "tool": name,
+                        "error": str(e)
                     })
 
         return {
             "answer": answer,
             "intent": intent,
             "tools_used": tools_used,
-            "sources": [
-                {"id": d.get("id"), "title": d["title"]}
-                for d in documents
-            ] if documents else []
+            "sources": sources
         }
 
     except Exception as e:
         return {
-            "answer": f"Sorry, I'm having trouble processing your request: {str(e)}",
+            "answer": f"System error: {str(e)}",
             "intent": intent,
             "tools_used": [],
             "sources": []
